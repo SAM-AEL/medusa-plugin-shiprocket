@@ -1,8 +1,10 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import crypto from "crypto"
+import { fail, isValidAwb, ok } from "../../../../shared/http"
 
 // Module identifier - must match what's registered in medusa-config.ts
 const SHIPROCKET_TRACKING_MODULE = "shiprocketTrackingModuleService"
+export const AUTHENTICATE = false
 
 /**
  * Constant-time string comparison to prevent timing attacks.
@@ -45,6 +47,22 @@ interface ShiprocketWebhookPayload {
     pod?: string
 }
 
+const WEBHOOK_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000
+const processedWebhookKeys = new Map<string, number>()
+
+function cleanupProcessedWebhookKeys() {
+    const now = Date.now()
+    for (const [key, expiresAt] of processedWebhookKeys.entries()) {
+        if (expiresAt <= now) {
+            processedWebhookKeys.delete(key)
+        }
+    }
+}
+
+function getIdempotencyKey(payload: ShiprocketWebhookPayload): string {
+    return `${payload.awb}:${payload.current_status_id || payload.current_status}:${payload.current_timestamp || "na"}`
+}
+
 /**
  * Shiprocket Webhook Endpoint
  * 
@@ -63,29 +81,38 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
 
         if (!expectedToken) {
             logger.warn("Shiprocket webhook: SHIPROCKET_WEBHOOK_TOKEN not configured")
-            return res.status(500).json({
-                success: false,
-                error: "Webhook not configured"
-            })
+            return fail(res, 500, "WEBHOOK_NOT_CONFIGURED", "Webhook not configured")
         }
 
         if (!token || !constantTimeCompare(token, expectedToken)) {
             logger.warn("Shiprocket webhook: Invalid or missing token")
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized"
-            })
+            return fail(res, 401, "UNAUTHORIZED", "Unauthorized")
         }
 
         // Parse webhook payload
         const payload = req.body as ShiprocketWebhookPayload
 
-        if (!payload?.awb) {
-            logger.warn("Shiprocket webhook: Missing AWB in payload")
-            return res.status(400).json({
-                success: false,
-                error: "Invalid payload - missing AWB"
+        if (!payload?.awb || !isValidAwb(payload.awb)) {
+            logger.warn("Shiprocket webhook: Missing or invalid AWB in payload")
+            return fail(res, 400, "INVALID_PAYLOAD", "Invalid payload - missing or invalid AWB")
+        }
+
+        if (!payload.current_status || !payload.shipment_status) {
+            return fail(res, 400, "INVALID_PAYLOAD", "Invalid payload - missing shipment status")
+        }
+
+        cleanupProcessedWebhookKeys()
+        const idemKey = getIdempotencyKey(payload)
+        if (processedWebhookKeys.has(idemKey)) {
+            return ok(res, {
+                message: "Webhook already processed",
+                awb: payload.awb,
             })
+        }
+        processedWebhookKeys.set(idemKey, Date.now() + WEBHOOK_IDEMPOTENCY_TTL_MS)
+
+        if (processedWebhookKeys.size > 10000) {
+            cleanupProcessedWebhookKeys()
         }
 
         logger.info(
@@ -181,16 +208,12 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
         }
 
 
-        return res.status(200).json({
-            success: true,
+        return ok(res, {
             message: "Webhook processed",
             awb: payload.awb,
-        })
+        }, 200)
     } catch (error: any) {
         logger.error(`Shiprocket webhook error: ${error.message}`, error)
-        return res.status(500).json({
-            success: false,
-            error: "Internal server error"
-        })
+        return fail(res, 500, "INTERNAL_ERROR", "Internal server error")
     }
 }

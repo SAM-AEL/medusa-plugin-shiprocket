@@ -3,6 +3,7 @@ import http from "http"
 import https from "https"
 import { MedusaError } from "@medusajs/utils"
 import { Logger } from "@medusajs/framework/types"
+import { SHIPROCKET_DEFAULT_TIMEOUT_MS } from "./config"
 
 interface CachedToken {
     token: string
@@ -36,7 +37,6 @@ const fallbackLogger: Logger = {
     unsetLogLevel: () => { },
 }
 
-const DEFAULT_TIMEOUT = 15000 // 15 seconds
 const TOKEN_REFRESH_BUFFER_DAYS = 8 // Refresh 2 days before expiry (10 day token)
 const DELIVERY_ESTIMATE_CACHE_HOURS = 4 // Cache estimates for 4 hours
 
@@ -116,7 +116,7 @@ class ShiprocketClientManager {
         this.axios = axios.create({
             baseURL: "https://apiv2.shiprocket.in/v1/external",
             headers: { "Content-Type": "application/json" },
-            timeout: DEFAULT_TIMEOUT,
+            timeout: SHIPROCKET_DEFAULT_TIMEOUT_MS,
             httpAgent,
             httpsAgent,
         })

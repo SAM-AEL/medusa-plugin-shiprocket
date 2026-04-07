@@ -1,4 +1,5 @@
 import type { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { fail, isValidAwb, ok } from "../../../../../shared/http"
 
 // Module identifier - must match what's registered in medusa-config.ts
 const SHIPROCKET_TRACKING_MODULE = "shiprocketTrackingModuleService"
@@ -13,11 +14,8 @@ const SHIPROCKET_TRACKING_MODULE = "shiprocketTrackingModuleService"
 export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
     const { awb } = req.params
 
-    if (!awb) {
-        return res.status(400).json({
-            success: false,
-            error: "AWB parameter is required"
-        })
+    if (!isValidAwb(awb)) {
+        return fail(res, 400, "INVALID_AWB", "AWB parameter is required and must be valid")
     }
 
     try {
@@ -26,15 +24,11 @@ export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) 
         const tracking = await trackingService.findByAwb(awb)
 
         if (!tracking) {
-            return res.status(404).json({
-                success: false,
-                error: "Tracking not found"
-            })
+            return fail(res, 404, "NOT_FOUND", "Tracking not found")
         }
 
         // Return full tracking data for admin
-        return res.status(200).json({
-            success: true,
+        return ok(res, {
             tracking: {
                 id: tracking.id,
                 awb: tracking.awb,
@@ -55,7 +49,7 @@ export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) 
                 pod: tracking.pod,
                 channel_id: tracking.channel_id,
                 scans: tracking.scans || [],
-                raw_payload: tracking.raw_payload,
+                raw_payload_redacted: !!tracking.raw_payload,
                 created_at: tracking.created_at,
                 updated_at: tracking.updated_at,
             },
@@ -63,9 +57,6 @@ export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     } catch (error: any) {
         const logger = req.scope.resolve("logger")
         logger.error(`Admin tracking API error: ${error.message}`, error)
-        return res.status(500).json({
-            success: false,
-            error: "Internal server error"
-        })
+        return fail(res, 500, "INTERNAL_ERROR", "Internal server error")
     }
 }

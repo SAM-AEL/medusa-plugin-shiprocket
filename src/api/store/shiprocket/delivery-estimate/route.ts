@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getShiprocketManager, hasShiprocketCredentials } from "../../../../providers/shiprocket/client/manager"
 import { rateLimiter, getClientIdentifier } from "./rate-limiter"
+import { fail, ok } from "../../../../shared/http"
 
 // Make this route public (no publishable API key required)
 export const AUTHENTICATE = false
@@ -35,10 +36,7 @@ export async function GET(
         res.setHeader("X-RateLimit-Remaining", "0")
         res.setHeader("X-RateLimit-Reset", resetTime.toString())
         res.setHeader("Retry-After", resetTime.toString())
-        return res.status(429).json({
-            error: "Too many requests",
-            message: `Rate limit exceeded. Try again in ${resetTime} seconds.`,
-        })
+        return fail(res, 429, "RATE_LIMITED", `Rate limit exceeded. Try again in ${resetTime} seconds.`)
     }
 
     // Set rate limit headers
@@ -54,27 +52,31 @@ export async function GET(
 
     // Validate credentials are configured
     if (!hasShiprocketCredentials()) {
-        return res.status(500).json({
-            error: "Configuration error",
-            message: "Shiprocket credentials not configured. Set SHIPROCKET_EMAIL and SHIPROCKET_PASSWORD environment variables.",
-        })
+        return fail(
+            res,
+            500,
+            "CONFIGURATION_ERROR",
+            "Shiprocket credentials not configured. Set SHIPROCKET_EMAIL and SHIPROCKET_PASSWORD environment variables."
+        )
     }
 
     // Validate delivery pincode is provided
     if (!delivery_pincode) {
-        return res.status(400).json({
-            error: "Missing delivery_pincode",
-            message: "'delivery_pincode' query parameter is required",
-        })
+        return fail(res, 400, "INVALID_QUERY", "'delivery_pincode' query parameter is required")
     }
 
     // Validate delivery pincode format (Indian pincodes are 6 digits)
     const pincodeRegex = /^\d{6}$/
     if (!pincodeRegex.test(delivery_pincode)) {
-        return res.status(400).json({
-            error: "Invalid delivery_pincode",
-            message: "Delivery pincode must be a 6-digit number",
-        })
+        return fail(res, 400, "INVALID_QUERY", "Delivery pincode must be a 6-digit number")
+    }
+
+    if (weight !== undefined && (isNaN(Number(weight)) || Number(weight) <= 0 || Number(weight) > 100)) {
+        return fail(res, 400, "INVALID_QUERY", "weight must be a number between 0 and 100")
+    }
+
+    if (cod !== undefined && !["0", "1"].includes(String(cod))) {
+        return fail(res, 400, "INVALID_QUERY", "cod must be 0 or 1")
     }
 
     const logger = req.scope.resolve("logger")
@@ -106,18 +108,17 @@ export async function GET(
         }
 
         if (!pickupPincode) {
-            return res.status(400).json({
-                error: "Missing pickup pincode",
-                message: "Either provide 'pickup_pincode' query parameter or set SHIPROCKET_PICKUP_LOCATION environment variable to auto-fetch the pincode",
-            })
+            return fail(
+                res,
+                400,
+                "INVALID_QUERY",
+                "Either provide 'pickup_pincode' or set SHIPROCKET_PICKUP_LOCATION to auto-fetch pickup pincode"
+            )
         }
 
         // Validate pickup pincode format
         if (!pincodeRegex.test(pickupPincode)) {
-            return res.status(400).json({
-                error: "Invalid pickup_pincode",
-                message: "Pickup pincode must be a 6-digit number",
-            })
+            return fail(res, 400, "INVALID_QUERY", "Pickup pincode must be a 6-digit number")
         }
 
         // Get delivery estimate using manager (uses cached token and connection)
@@ -128,12 +129,9 @@ export async function GET(
             cod: cod ? parseInt(cod) : undefined,
         })
 
-        return res.json(estimate)
+        return ok(res, { estimate })
     } catch (error: any) {
         logger.error(`Delivery estimate error: ${error.message}`)
-        return res.status(500).json({
-            error: "Failed to get delivery estimate",
-            message: error.message || "An unexpected error occurred",
-        })
+        return fail(res, 500, "DELIVERY_ESTIMATE_FAILED", error.message || "An unexpected error occurred")
     }
 }

@@ -1,6 +1,7 @@
 import type { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 // @ts-ignore - Explicit .js extension required for NodeNext resolution, maps to .ts source
 import ShiprocketClient from "../../../../../../providers/shiprocket/client/index.js"
+import { fail, isValidAwb, ok } from "../../../../../../shared/http"
 
 const SHIPROCKET_TRACKING_MODULE = "shiprocketTrackingModuleService"
 
@@ -15,11 +16,8 @@ const SHIPROCKET_TRACKING_MODULE = "shiprocketTrackingModuleService"
 export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
     const { awb } = req.params
 
-    if (!awb) {
-        return res.status(400).json({
-            success: false,
-            error: "AWB parameter is required"
-        })
+    if (!isValidAwb(awb)) {
+        return fail(res, 400, "INVALID_AWB", "AWB parameter is required and must be valid")
     }
 
     try {
@@ -46,10 +44,7 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
             const trackingResponse = await client.getTrackingInfo(awb)
 
             if (!trackingResponse?.tracking_data) {
-                return res.status(404).json({
-                    success: false,
-                    error: "No tracking data found from Shiprocket"
-                })
+                return fail(res, 404, "NOT_FOUND", "No tracking data found from Shiprocket")
             }
 
             const trackingData = trackingResponse.tracking_data
@@ -155,8 +150,7 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
                 }
             }
 
-            return res.status(200).json({
-                success: true,
+            return ok(res, {
                 message: "Tracking data synced successfully",
                 tracking: {
                     id: tracking.id,
@@ -167,7 +161,7 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
                     updated_at: tracking.updated_at,
                 },
                 documents // Return documents if found
-            })
+            }, 200)
         } finally {
             // Always dispose client
             client.dispose()
@@ -176,9 +170,6 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
         const logger = req.scope.resolve("logger")
         logger.error(`Admin tracking sync error: ${error.message}`, error)
 
-        return res.status(500).json({
-            success: false,
-            error: error.message || "Failed to sync tracking data"
-        })
+        return fail(res, 500, "SYNC_FAILED", error.message || "Failed to sync tracking data")
     }
 }

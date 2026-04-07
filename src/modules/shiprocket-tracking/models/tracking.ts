@@ -20,7 +20,7 @@ export const ShiprocketTracking = model.define("shiprocket_tracking", {
     courier_name: model.text().nullable(),
 
     // Status
-    current_status: model.text(), // e.g., "IN TRANSIT", "DELIVERED"
+    current_status: model.text().index("IDX_shiprocket_tracking_current_status"), // e.g., "IN TRANSIT", "DELIVERED"
     current_status_id: model.number().nullable(),
     shipment_status: model.text().nullable(),
     shipment_status_id: model.number().nullable(),

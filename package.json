@@ -1,6 +1,6 @@
 {
   "name": "@sam-ael/medusa-plugin-shiprocket",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Shiprocket India fulfillment and live rates provider for Medusa v2.",
   "author": "SAM-AEL (https://www.github.com/SAM-AEL)",
   "homepage": "https://github.com/SAM-AEL",
@@ -27,14 +27,18 @@
   },
   "keywords": [
     "medusa",
-    "plugin",
+    "medusajs",
     "medusa-plugin",
     "medusa-v2",
+    "medusa-plugin-integration",
     "medusa-plugin-shipping"
   ],
   "scripts": {
     "build": "medusa plugin:build",
     "dev": "medusa plugin:develop",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "ts-node --transpile-only src/tests/smoke.ts",
     "prepublishOnly": "medusa plugin:build"
   },
   "dependencies": {

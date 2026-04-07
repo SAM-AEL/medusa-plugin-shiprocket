@@ -1,4 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { fail, isValidAwb, ok } from "../../../../../shared/http"
 
 // Module identifier - must match what's registered in medusa-config.ts
 const SHIPROCKET_TRACKING_MODULE = "shiprocketTrackingModuleService"
@@ -11,21 +12,10 @@ const SHIPROCKET_TRACKING_MODULE = "shiprocketTrackingModuleService"
  * Returns tracking status and scan history for a shipment.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
-    let { awb } = req.params
+    const { awb } = req.params
 
-    // Fallback: parse from URL if params is empty
-    if (!awb && req.url) {
-        const parts = req.url.split('/')
-        const lastPart = parts[parts.length - 1]
-        // Remove query params if any
-        awb = lastPart.split('?')[0]
-    }
-
-    if (!awb) {
-        return res.status(400).json({
-            success: false,
-            error: "AWB parameter is required"
-        })
+    if (!isValidAwb(awb)) {
+        return fail(res, 400, "INVALID_AWB", "AWB parameter is required and must be valid")
     }
 
     try {
@@ -34,10 +24,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
         const tracking = await trackingService.findByAwb(awb)
 
         if (!tracking) {
-            return res.status(404).json({
-                success: false,
-                error: "Tracking not found"
-            })
+            return fail(res, 404, "NOT_FOUND", "Tracking not found")
         }
 
         // Security: Check ownership if linked to a Medusa Order
@@ -52,12 +39,13 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
                 // Get current user from auth context
                 const actorId = (req as any).auth_context?.actor_id
 
+                if (!actorId) {
+                    return fail(res, 403, "ACCESS_DENIED", "Authentication is required to access this tracking record")
+                }
+
                 // If order has a customer and it doesn't match the requester
                 if (order.customer_id && order.customer_id !== actorId) {
-                    return res.status(403).json({
-                        success: false,
-                        error: "Access denied. You do not own this order."
-                    })
+                    return fail(res, 403, "ACCESS_DENIED", "Access denied. You do not own this order.")
                 }
             } catch (e) {
                 // Ownership verification failed - deny access for security
@@ -67,17 +55,13 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
                 // If the error is not "order not found", deny access
                 // (order not found shouldn't happen if ID exists, so it's likely a system error)
                 if (!(e as Error).message.toLowerCase().includes("not found")) {
-                    return res.status(403).json({
-                        success: false,
-                        error: "Access denied. Unable to verify order ownership."
-                    })
+                    return fail(res, 403, "ACCESS_DENIED", "Access denied. Unable to verify order ownership.")
                 }
             }
         }
 
         // Return cleaned tracking data
-        return res.status(200).json({
-            success: true,
+        return ok(res, {
             tracking: {
                 awb: tracking.awb,
                 courier_name: tracking.courier_name,
@@ -92,13 +76,10 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
                 scans: tracking.scans || [],
                 updated_at: tracking.updated_at,
             },
-        })
+        }, 200)
     } catch (error: any) {
         const logger = req.scope.resolve("logger")
         logger.error(`Tracking API error: ${error.message}`, error)
-        return res.status(500).json({
-            success: false,
-            error: "Internal server error"
-        })
+        return fail(res, 500, "INTERNAL_ERROR", "Internal server error")
     }
 }

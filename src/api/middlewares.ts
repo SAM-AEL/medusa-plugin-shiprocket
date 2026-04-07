@@ -8,5 +8,11 @@ export default defineMiddlewares({
             middlewares: [],
             bodyParser: { sizeLimit: "1kb" },
         },
+        {
+            // Shiprocket webhook endpoint must stay public and tightly size-limited.
+            matcher: "/hooks/fulfillment/shiprocket",
+            middlewares: [],
+            bodyParser: { sizeLimit: "64kb" },
+        },
     ],
 })

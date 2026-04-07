@@ -1,150 +1,102 @@
 <p align="center">
-  <img src="https://img.shields.io/npm/v/@sam-ael/medusa-plugin-shiprocket?style=flat-square&color=F97316" alt="npm version" />
-  <img src="https://img.shields.io/badge/medusa-v2-7C3AED?style=flat-square" alt="Medusa v2" />
+  <img src="https://img.shields.io/npm/v/@sam-ael/medusa-plugin-shiprocket?style=flat-square&color=EA580C" alt="npm version" />
+  <img src="https://img.shields.io/badge/medusa-v2-0F172A?style=flat-square" alt="Medusa v2" />
+  <img src="https://img.shields.io/badge/category-shipping-7C2D12?style=flat-square" alt="shipping plugin" />
   <img src="https://img.shields.io/npm/l/@sam-ael/medusa-plugin-shiprocket?style=flat-square" alt="license" />
 </p>
 
 # @sam-ael/medusa-plugin-shiprocket
 
-A complete **Shiprocket** fulfillment integration for **MedusaJS v2** stores operating in India.
+Production-focused Shiprocket integration for Medusa v2 with fulfillment automation, delivery estimate APIs, and tracking synchronization.
 
-This plugin handles the full lifecycle of shipping through Shiprocket: from fetching live courier rates and delivery estimates at checkout, to automatically generating shipments, AWBs, and shipping labels when a fulfillment is created in the Medusa Admin.
+## Highlights
 
----
+- Shiprocket fulfillment provider integration
+- Delivery estimate endpoint for storefront experiences
+- Tracking sync endpoints for admin and storefront views
+- Webhook ingestion for status updates
+- Hardened API responses and stricter payload validation
+- Webhook idempotency guard and explicit public webhook handling
+- Tracking ownership hardening and AWB validation
 
-## Features
-
-- 🚚 **Live Shipping Rates** — Provides live courier rates and delivery estimates during checkout based on the customer's pincode.
-- 📦 **Automated Fulfillment** — Automatically generate Shiprocket orders, AWBs, and shipping labels whenever a Medusa fulfillment is created.
-- 🪝 **Real-Time Tracking** — Receive automated status updates via webhooks and synchronize them deeply within Medusa for customers and admins.
-- 🖥️ **Admin Tracking Widget** — Custom widget inside the Medusa Admin for viewing live statuses, shipping timelines, and quickly downloading AWBs/Invoices.
-- 💵 **Cash on Delivery Flow** — Easily configurable to accept COD payments with Shiprocket natively.
-- ⚙️ **Courier Preferences** — Tell the fulfillment engine to prefer `FAST` deliveries or `CHEAP` deliveries. 
-
----
-
-## Prerequisites
-
-- **MedusaJS v2** (`>= 2.x`)
-- A **Shiprocket** Account
-- Properly configured Product Variants (Weight in grams, Length/Width/Height in cm) — required by Shiprocket.
-
----
-
-## Installation
+## Install
 
 ```bash
 yarn add @sam-ael/medusa-plugin-shiprocket
 ```
 
-Or with npm:
+## Medusa Configuration
 
-```bash
-npm install @sam-ael/medusa-plugin-shiprocket
+```ts
+modules: [
+  {
+    resolve: "@medusajs/medusa/fulfillment",
+    options: {
+      providers: [
+        {
+          resolve: "@sam-ael/medusa-plugin-shiprocket",
+          id: "shiprocket",
+          options: {
+            email: process.env.SHIPROCKET_EMAIL,
+            password: process.env.SHIPROCKET_PASSWORD,
+            pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION,
+          },
+        },
+      ],
+    },
+  },
+],
+plugins: [
+  {
+    resolve: "@sam-ael/medusa-plugin-shiprocket",
+    options: {},
+  },
+]
 ```
 
----
-
-## Configuration
-
-### 1. Set environment variables
-
-Add the required credentials to your `.env` file:
+## Environment Variables
 
 ```env
-# Required
-SHIPROCKET_EMAIL="your_email@example.com"
-SHIPROCKET_PASSWORD="your_shiprocket_password"
+SHIPROCKET_EMAIL=your_email@example.com
+SHIPROCKET_PASSWORD=your_password
+SHIPROCKET_PICKUP_LOCATION=Primary
+SHIPROCKET_WEBHOOK_TOKEN=your_webhook_token
+SHIPROCKET_DELIVERY_PREFERENCE=FAST
 
-# Optional
-SHIPROCKET_PICKUP_LOCATION="Primary"           # The exact nickname of your pickup location in Shiprocket
-SHIPROCKET_WEBHOOK_TOKEN="secure_random_token" # Token for authenticating incoming webhooks from Shiprocket
-SHIPROCKET_DELIVERY_PREFERENCE="FAST"          # FAST or CHEAP (default: FAST)
+SHIPROCKET_API_TIMEOUT_MS=15000
+SHIPROCKET_WEBHOOK_PAYLOAD_RETENTION_DAYS=30
 ```
 
-### 2. Configure the plugin in `medusa-config.ts`
-
-You need to add it to both the `modules` section (for the fulfillment provider) and the `plugins` section (for the admin UI and API routes).
-
-```typescript
-import { defineConfig } from "@medusajs/framework/utils"
-
-export default defineConfig({
-  modules: [
-    {
-      resolve: "@medusajs/medusa/fulfillment",
-      options: {
-        providers: [
-          {
-            resolve: "@sam-ael/medusa-plugin-shiprocket",
-            id: "shiprocket",
-            options: {
-              email: process.env.SHIPROCKET_EMAIL,
-              password: process.env.SHIPROCKET_PASSWORD,
-              pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION,
-              cod: "false", // set to "true" if you want to enable automatic Cash on Delivery flows
-            },
-          },
-        ],
-      },
-    },
-  ],
-  plugins: [
-    {
-      resolve: "@sam-ael/medusa-plugin-shiprocket",
-      options: {},
-    },
-  ],
-})
-```
-
----
-
-## How It Works
-
-### Live Shipping Rates & Delivery Estimates
-At checkout, your storefront can query the plugin to get live delivery estimates and check if a pincode is serviceable by Shiprocket. It uses the `SHIPROCKET_DELIVERY_PREFERENCE` to pick the best courier based on speed or price. 
-> *Note: These API endpoints are heavily rate-limited and cached in-memory to prevent abuse.*
-
-### Order Fulfillment
-When you create a fulfillment in the Medusa admin, this plugin automatically maps the order details, calculates total weights and dimensions, and sends a create order request to Shiprocket. It will then automatically assign an AWB (Air Waybill) and generate the shipping label, invoice, and manifest.
-
-**⚠️ Important Note on Dimensions:**
-Shiprocket is very strict about calculating shipping costs based on volumetric weight. If dimensions are missing, Shiprocket can penalize your account. This plugin requires you to set the `weight` (in grams), `length`, `width`, and `height` (in cm) on your Medusa Product Variants. The plugin will throw an error and refuse to create the fulfillment if these are missing.
-
-### Automated Tracking via Webhooks
-You can set up webhooks in your Shiprocket dashboard to send real-time tracking updates back to Medusa.
-1. Go to Shiprocket Settings → Webhooks
-2. Add Webhook URL: `https://your-domain.com/hooks/fulfillment/shiprocket`
-3. Add a custom header `x-api-key` and set it to match your `SHIPROCKET_WEBHOOK_TOKEN` in Medusa.
-
-When updates hit this endpoint, the plugin will sync the status to the Medusa order so your customers and admins always see the latest tracking info.
-
-### Admin Dashboard Widget
-We inject a custom tracking widget directly into the Order detail page in the Medusa Admin. This widget lets you:
-- See the current tracking status
-- View a timeline of shipping events
-- Download the shipping label, invoice, and manifest directly from Medusa
-- Manually trigger a tracking sync if you don't want to use webhooks
-
----
-
-## API Reference
-
-### Storefront APIs
-
-| Method | Endpoint | Description | Query Params |
-|---|---|---|---|
-| `GET` | `/store/shiprocket/delivery-estimate` | Checks if a pincode is serviceable and returns an estimated delivery date and price. | `delivery_pincode`, `weight` (opt), `cod` (opt) |
-| `GET` | `/store/shiprocket/tracking/:awb` | Returns the tracking history for a specific AWB. | — |
-
-### Admin APIs
+## API
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/admin/shiprocket/tracking/:awb/sync` | Manually pull the latest tracking details and regenerate document URLs. |
+| `GET` | `/store/shiprocket/delivery-estimate` | Delivery estimate lookup |
+| `GET` | `/store/shiprocket/tracking/:awb` | Store tracking lookup |
+| `POST` | `/hooks/fulfillment/shiprocket` | Shiprocket webhook receiver |
+| `GET` | `/admin/shiprocket/tracking/:awb` | Admin tracking details |
+| `POST` | `/admin/shiprocket/tracking/:awb/sync` | Force tracking/document sync |
 
----
+## Security and Reliability Notes
+
+- Unified error contract: `{ success: false, code, message, details? }`
+- AWB and query validation added for tracking and estimate APIs
+- Webhook token validation with constant-time compare
+- Webhook replay/idempotency keying on AWB + status/timestamp
+- Public route boundaries are explicit
+- Retention cleanup job for webhook raw payload minimization
+- Indexes added for high-frequency lookup fields
+
+## Quality Gates
+
+```bash
+yarn typecheck
+yarn lint
+yarn test
+yarn build
+```
+
+Smoke tests are available under `src/tests`.
 
 ## License
 
